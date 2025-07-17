@@ -2,13 +2,13 @@ const dotenv = require("dotenv");
 const express = require("express");
 const cors = require("cors");
 const morgan = require("morgan");
-const routes = require("./routes/index");
+const routes = require("./src/routes/index");
 
 // ✅ Load .env first!
 dotenv.config();
 
 // Now connect to MongoDB
-const connectDB = require("./config/db");
+const connectDB = require("./src/config/db");
 connectDB();
 
 const app = express();
