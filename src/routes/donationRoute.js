@@ -21,6 +21,6 @@ router.route("/donation/:id").put(updateDonation);
 router.route("/donation/:id").delete(deleteDonation);
 router.route("/donation-status/:memberId").get(getDonationStatus);
 router.route("/paid-months/:memberId").get(getPaidMonthsForMember);
-router.route("/donation-status/:memberId").put(updateDonationPaymentStatus);
+router.route("/donation-status/:memberId").patch(updateDonationPaymentStatus);
 
 module.exports = router;

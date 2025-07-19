@@ -5,20 +5,23 @@ const DonationMember = require("../models/donationmembermodel"); // assuming you
 
 const getFinancialReport = async (req, res) => {
   try {
-    // 🔹 Total Donations (Donations + PaymentStatus)
-    const donationSum = await Donations.aggregate([
+    // 🔹 Total Monthly Donations (Source of Truth: DonationPaymentStatus)
+    const totalMonthlyDonationSum = await DonationPaymentStatus.aggregate([
       { $match: { status: "paid" } },
       { $group: { _id: null, total: { $sum: "$amount" } } },
     ]);
-    const donationAmount = donationSum[0]?.total || 0;
+    const totalMonthlyDonationAmount = totalMonthlyDonationSum[0]?.total || 0;
 
-    const paymentStatusSum = await DonationPaymentStatus.aggregate([
-      { $match: { status: "paid" } },
+    // 🔹 Total Non-Monthly Donations (Source of Truth: Donations model, but exclude 'monthly' type)
+    const totalNonMonthlyDonationSum = await Donations.aggregate([
+      { $match: { status: "paid", donation_type: { $ne: "monthly" } } }, // Exclude 'monthly' type
       { $group: { _id: null, total: { $sum: "$amount" } } },
     ]);
-    const paymentStatusAmount = paymentStatusSum[0]?.total || 0;
+    const totalNonMonthlyDonationAmount =
+      totalNonMonthlyDonationSum[0]?.total || 0;
 
-    const totalDonation = donationAmount + paymentStatusAmount;
+    const totalDonation =
+      totalMonthlyDonationAmount + totalNonMonthlyDonationAmount;
 
     // 🔹 Total Expenses
     const expenseSum = await Expenses.aggregate([
@@ -28,7 +31,7 @@ const getFinancialReport = async (req, res) => {
 
     const latestBalance = totalDonation - totalExpense;
 
-    // 🔹 Most Recent Earning (Donations or PaymentStatus)
+    // 🔹 Most Recent Earning (Now considering both sources, but for display)
     let lastEarning = null;
 
     const recentDonation = await Donations.findOne({ status: "paid" })
@@ -54,16 +57,16 @@ const getFinancialReport = async (req, res) => {
       lastEarning = recentMonthlyPayment;
     }
 
-    // 🔹 Most Recent Expense
+    // 🔹 Most Recent Expense (No change)
     const lastExpense = await Expenses.findOne({})
       .sort({ expense_date: -1, createdAt: -1 })
       .select("expense_amount expense_details expense_date")
       .lean();
 
-    // 🔹 Total Donors
+    // 🔹 Total Donors (No change)
     const totalDonor = await DonationMember.countDocuments();
 
-    // 🔹 Total Active Donors (Donations or PaymentStatus with status: paid)
+    // 🔹 Total Active Donors (No change - still good to combine distinct from both)
     const activeDonorsFromDonations = await Donations.distinct(
       "donationmember_id",
       { status: "paid" }
@@ -85,6 +88,8 @@ const getFinancialReport = async (req, res) => {
     return res.status(200).json({
       summary: {
         latestBalance,
+        totalDonation, // Added totalDonation to the response for clarity
+        totalExpense, // Added totalExpense to the response for clarity
         lastEarning,
         lastExpense,
         totalDonor,

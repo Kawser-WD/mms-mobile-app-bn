@@ -1,83 +1,6 @@
 const Donations = require("../models/donationmodel");
 const DonationPaymentStatus = require("../models/donationPaymentStatusModel");
-
-// const addDonation = async (req, res) => {
-//   try {
-//     const {
-//       donationmember_id,
-//       name,
-//       phone,
-//       address,
-//       months, // Expects e.g. ["July 2025", "August 2025"]
-//       donation_type,
-//       donation_details,
-//       amount,
-//     } = req.body;
-
-//     // --- Input Validation for 'months' array ---
-//     if (!Array.isArray(months) || months.length === 0) {
-//       return res.status(400).json({
-//         message:
-//           "Months array is required and must not be empty. Expected format: ['Month YYYY'].",
-//       });
-//     }
-
-//     // Convert "July 2025" → "2025-7" for storage in BOTH Donations and DonationPaymentStatus models
-//     const formattedMonths = months.map((m) => {
-//       const parts = m.split(" ");
-//       if (parts.length !== 2) {
-//         console.error(
-//           `Invalid month format in input: "${m}". Expected "Month YYYY".`
-//         );
-//         throw new Error(`Invalid month format: "${m}". Expected "Month YYYY".`); // Throw to catch in outer try/catch
-//       }
-//       const [monthName, year] = parts;
-//       const monthIndex = new Date(`${monthName} 1, ${year}`).getMonth() + 1;
-
-//       // Check if monthIndex is valid (not NaN)
-//       if (isNaN(monthIndex)) {
-//         console.error(`Could not parse month name "${monthName}" from "${m}".`);
-//         throw new Error(`Invalid month name: "${monthName}" in "${m}".`); // Throw to catch in outer try/catch
-//       }
-//       return `${year}-${monthIndex}`;
-//     });
-
-//     // Create the donation record
-//     const newDonation = await Donations.create({
-//       donationmember_id,
-//       name,
-//       phone,
-//       address,
-//       months: formattedMonths, // Store formatted months in Donations model (e.g., "2025-7")
-//       donation_type,
-//       donation_details,
-//       amount,
-//     });
-
-//     // For each donated month, mark as "paid" in DonationPaymentStatus
-//     // IMPORTANT: Use the 'formattedMonths' array (e.g., "2025-7") for DonationPaymentStatus
-//     // This ensures consistency with the 'month' field in your existing DonationPaymentStatus data
-//     await Promise.all(
-//       formattedMonths.map(async (month) => {
-//         // 'month' here is "2025-7"
-//         await DonationPaymentStatus.findOneAndUpdate(
-//           { donationmember_id, month }, // Query uses "YYYY-M" format
-//           { status: "paid" },
-//           { upsert: true, new: true } // Create if not exist, return new document
-//         );
-//       })
-//     );
-
-//     res.status(201).json({
-//       message: "Donation added successfully",
-//       data: newDonation,
-//     });
-//   } catch (error) {
-//     console.error("Error adding donation:", error.message); // Log the specific error message
-//     res.status(400).json({ error: error.message });
-//   }
-// };
-
+const DonationMember = require("../models/donationmembermodel");
 const addDonation = async (req, res) => {
   try {
     const {
@@ -272,52 +195,25 @@ const getDonationStatus = async (req, res) => {
   }
 };
 
-// const updateDonationPaymentStatus = async (req, res) => {
-//   try {
-//     const { memberId } = req.params;
-//     const { month, status, amount } = req.body; // month should be in "YYYY-M" format (e.g., "2025-7"), status "paid" or "unpaid"
-
-//     if (!month || !status || !amount) {
-//       return res
-//         .status(400)
-//         .json({ message: "Month (in YYYY-M format) and status are required." });
-//     }
-
-//     // Find and update the payment status. Using findOneAndUpdate with upsert: true
-//     // ensures that if a record for that member and month doesn't exist, it's created.
-//     const updatedStatus = await DonationPaymentStatus.findOneAndUpdate(
-//       { donationmember_id: memberId, month: month }, // Query uses "YYYY-M" format
-//       { status: status },
-//       { new: true, upsert: true } // new: true returns the updated document, upsert: true creates if not found
-//     );
-
-//     if (!updatedStatus) {
-//       return res
-//         .status(404)
-//         .json({ message: "Donation payment status not found or updated." });
-//     }
-
-//     res.status(200).json({
-//       message: "Donation payment status updated successfully",
-//       data: updatedStatus,
-//     });
-//   } catch (error) {
-//     console.error("Error updating donation payment status:", error.message);
-//     res.status(400).json({ error: error.message });
-//   }
-// };
-
-// get single donation
-
 const updateDonationPaymentStatus = async (req, res) => {
   try {
-    const { memberId } = req.params;
+    const { memberId } = req.params; // Make sure memberId is present in the URL
     const { month, status, amount } = req.body;
 
+    // This validation is NOT the source of the 400 error
     if (!month || !status || amount == null) {
       return res.status(400).json({
         message: "Month (in YYYY-M format), status, and amount are required.",
       });
+    }
+
+    // Potential source of 400: The `memberId` from req.params is missing or invalid.
+    // Add a check for memberId here
+    if (!memberId) {
+      console.log("Validation failed: memberId is missing from URL params.");
+      return res
+        .status(400)
+        .json({ message: "Member ID is required in the URL." });
     }
 
     const updatedStatus = await DonationPaymentStatus.findOneAndUpdate(
@@ -326,13 +222,41 @@ const updateDonationPaymentStatus = async (req, res) => {
       { new: true, upsert: true }
     );
 
+    // --- Your NEW LOGIC (if you implemented it from my previous suggestion) ---
+    // This is a potential source of error if DonationMember model is not found
+    // or if there's an issue with memberId
+    if (status === "paid") {
+      const donationMember = await DonationMember.findById(memberId);
+      if (!donationMember) {
+        console.warn(
+          `Donation member not found for ID: ${memberId}. Cannot create detailed donation record.`
+        );
+        // You might choose to return an error here if a member must exist
+        // return res.status(404).json({ message: "Donation member not found." });
+      }
+
+      await Donations.create({
+        donationmember_id: memberId,
+        name: donationMember ? donationMember.name : "Unknown",
+        phone: donationMember ? donationMember.phone : "N/A",
+        address: donationMember ? donationMember.address : "N/A",
+        months: [month],
+        donation_type: "monthly",
+        donation_details: `Payment for ${month}`,
+        amount: amount,
+        status: "paid",
+      });
+    }
+    // --- END NEW LOGIC ---
+
     res.status(200).json({
       message: "Donation payment status updated successfully",
       data: updatedStatus,
     });
   } catch (error) {
+    // THIS IS THE MOST LIKELY PLACE THE 400 IS COMING FROM NOW
     console.error("Error updating donation payment status:", error.message);
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: error.message }); // <--- THIS line
   }
 };
 
