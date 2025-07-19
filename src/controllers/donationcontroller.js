@@ -1,6 +1,7 @@
 const Donations = require("../models/donationmodel");
 const DonationPaymentStatus = require("../models/donationPaymentStatusModel");
 const DonationMember = require("../models/donationmembermodel");
+const { default: mongoose } = require("mongoose");
 const addDonation = async (req, res) => {
   try {
     const {
@@ -299,16 +300,43 @@ const updateDonation = async (req, res) => {
 };
 
 // delete donation
+// const deleteDonation = async (req, res) => {
+//   try {
+//     const { id } = req.params;
+//     const deletedDonation = await Donations.findByIdAndDelete(id);
+//     res.status(200).json({
+//       message: "Donation deleted successfully",
+//       data: deletedDonation,
+//     });
+//   } catch (error) {
+//     res.status(400).json({ error: error.message });
+//   }
+// };
+
 const deleteDonation = async (req, res) => {
   try {
     const { id } = req.params;
+
     const deletedDonation = await Donations.findByIdAndDelete(id);
+
+    if (!deletedDonation) {
+      return res.status(404).json({ message: "Donation not found" });
+    }
+
+    // ✅ Delete related payment status entries
+    await DonationPaymentStatus.deleteMany({
+      donationmember_id: deletedDonation.donationmember_id,
+    });
+
     res.status(200).json({
-      message: "Donation deleted successfully",
+      message: "Donation and related payment statuses deleted successfully",
       data: deletedDonation,
     });
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    res.status(500).json({
+      message: "Server error",
+      error: error.message,
+    });
   }
 };
 

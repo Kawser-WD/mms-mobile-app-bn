@@ -1,21 +1,269 @@
+// // const Donations = require("../models/donationmodel");
+// // const DonationPaymentStatus = require("../models/donationPaymentStatusModel");
+// // const Expenses = require("../models/expensemodel");
+// // const DonationMember = require("../models/donationmembermodel"); // assuming you have this model
+
+// // const getFinancialReport = async (req, res) => {
+// //   try {
+// //     // 🔹 Total Monthly Donations (Source of Truth: DonationPaymentStatus)
+// //     const totalMonthlyDonationSum = await DonationPaymentStatus.aggregate([
+// //       { $match: { status: "paid" } },
+// //       { $group: { _id: null, total: { $sum: "$amount" } } },
+// //     ]);
+// //     const totalMonthlyDonationAmount = totalMonthlyDonationSum[0]?.total || 0;
+
+// //     // 🔹 Total Non-Monthly Donations (Source of Truth: Donations model, but exclude 'monthly' type)
+// //     const totalNonMonthlyDonationSum = await Donations.aggregate([
+// //       { $match: { status: "paid", donation_type: { $ne: "monthly" } } }, // Exclude 'monthly' type
+// //       { $group: { _id: null, total: { $sum: "$amount" } } },
+// //     ]);
+// //     const totalNonMonthlyDonationAmount =
+// //       totalNonMonthlyDonationSum[0]?.total || 0;
+
+// //     const totalDonation =
+// //       totalMonthlyDonationAmount + totalNonMonthlyDonationAmount;
+
+// //     // 🔹 Total Expenses
+// //     const expenseSum = await Expenses.aggregate([
+// //       { $group: { _id: null, total: { $sum: "$expense_amount" } } },
+// //     ]);
+// //     const totalExpense = expenseSum[0]?.total || 0;
+
+// //     const latestBalance = totalDonation - totalExpense;
+
+// //     // 🔹 Most Recent Earning (Now considering both sources, but for display)
+// //     let lastEarning = null;
+
+// //     const recentDonation = await Donations.findOne({ status: "paid" })
+// //       .sort({ createdAt: -1 })
+// //       .select("amount createdAt donation_type name")
+// //       .lean();
+
+// //     const recentMonthlyPayment = await DonationPaymentStatus.findOne({
+// //       status: "paid",
+// //     })
+// //       .sort({ createdAt: -1 })
+// //       .select("amount createdAt month")
+// //       .lean();
+
+// //     if (recentDonation && recentMonthlyPayment) {
+// //       lastEarning =
+// //         recentDonation.createdAt > recentMonthlyPayment.createdAt
+// //           ? recentDonation
+// //           : recentMonthlyPayment;
+// //     } else if (recentDonation) {
+// //       lastEarning = recentDonation;
+// //     } else if (recentMonthlyPayment) {
+// //       lastEarning = recentMonthlyPayment;
+// //     }
+
+// //     // 🔹 Most Recent Expense (No change)
+// //     const lastExpense = await Expenses.findOne({})
+// //       .sort({ expense_date: -1, createdAt: -1 })
+// //       .select("expense_amount expense_details expense_date")
+// //       .lean();
+
+// //     // 🔹 Total Donors (No change)
+// //     const totalDonor = await DonationMember.countDocuments();
+
+// //     // 🔹 Total Active Donors (No change - still good to combine distinct from both)
+// //     const activeDonorsFromDonations = await Donations.distinct(
+// //       "donationmember_id",
+// //       { status: "paid" }
+// //     );
+// //     const activeDonorsFromPayments = await DonationPaymentStatus.distinct(
+// //       "donationmember_id",
+// //       { status: "paid" }
+// //     );
+
+// //     const activeDonorSet = new Set([
+// //       ...activeDonorsFromDonations
+// //         .filter((id) => id)
+// //         .map((id) => id.toString()),
+// //       ...activeDonorsFromPayments.filter((id) => id).map((id) => id.toString()),
+// //     ]);
+
+// //     const totalActiveDonor = activeDonorSet.size;
+
+// //     return res.status(200).json({
+// //       summary: {
+// //         latestBalance,
+// //         totalDonation, // Added totalDonation to the response for clarity
+// //         totalExpense, // Added totalExpense to the response for clarity
+// //         lastEarning,
+// //         lastExpense,
+// //         totalDonor,
+// //         totalActiveDonor,
+// //       },
+// //     });
+// //   } catch (error) {
+// //     console.error("Financial report error:", error);
+// //     return res.status(500).json({ message: "Internal server error" });
+// //   }
+// // };
+
+// // module.exports = { getFinancialReport };
+
+// const Donations = require("../models/donationmodel");
+// const DonationPaymentStatus = require("../models/donationPaymentStatusModel");
+// const Expenses = require("../models/expensemodel");
+// const DonationMember = require("../models/donationmembermodel");
+
+// const getFinancialReport = async (req, res) => {
+//   try {
+//     // 1️⃣ Total Monthly Donations - only from DonationPaymentStatus
+//     const totalMonthlyDonationSum = await DonationPaymentStatus.aggregate([
+//       { $match: { status: "paid" } },
+//       { $group: { _id: null, total: { $sum: "$amount" } } },
+//     ]);
+//     const totalMonthlyDonationAmount = totalMonthlyDonationSum[0]?.total || 0;
+
+//     // 2️⃣ Get IDs already paid via DonationPaymentStatus (to avoid duplication)
+//     const paidStatusDonationIds = await DonationPaymentStatus.distinct(
+//       "donationmember_id",
+//       {
+//         status: "paid",
+//       }
+//     );
+
+//     // 3️⃣ Total Non-Monthly Donations (excluding donationmember_ids already recorded in statuses)
+//     const totalNonMonthlyDonationSum = await Donations.aggregate([
+//       {
+//         $match: {
+//           status: "paid",
+//           donation_type: { $ne: "monthly" },
+//           donationmember_id: { $nin: paidStatusDonationIds },
+//         },
+//       },
+//       {
+//         $group: {
+//           _id: null,
+//           total: { $sum: "$amount" },
+//         },
+//       },
+//     ]);
+//     const totalNonMonthlyDonationAmount =
+//       totalNonMonthlyDonationSum[0]?.total || 0;
+
+//     const totalDonation =
+//       totalMonthlyDonationAmount + totalNonMonthlyDonationAmount;
+
+//     // 4️⃣ Total Expenses
+//     const expenseSum = await Expenses.aggregate([
+//       { $group: { _id: null, total: { $sum: "$expense_amount" } } },
+//     ]);
+//     const totalExpense = expenseSum[0]?.total || 0;
+
+//     const latestBalance = totalDonation - totalExpense;
+
+//     // 5️⃣ Most Recent Earning
+//     const recentDonation = await Donations.findOne({ status: "paid" })
+//       .sort({ createdAt: -1 })
+//       .select("amount createdAt donation_type name")
+//       .lean();
+
+//     const recentMonthlyPayment = await DonationPaymentStatus.findOne({
+//       status: "paid",
+//     })
+//       .sort({ createdAt: -1 })
+//       .select("amount createdAt month")
+//       .lean();
+
+//     let lastEarning = null;
+//     if (recentDonation && recentMonthlyPayment) {
+//       lastEarning =
+//         recentDonation.createdAt > recentMonthlyPayment.createdAt
+//           ? recentDonation
+//           : recentMonthlyPayment;
+//     } else {
+//       lastEarning = recentDonation || recentMonthlyPayment;
+//     }
+
+//     // 6️⃣ Most Recent Expense
+//     const lastExpense = await Expenses.findOne({})
+//       .sort({ expense_date: -1, createdAt: -1 })
+//       .select("expense_amount expense_details expense_date")
+//       .lean();
+
+//     // 7️⃣ Total Donors
+//     const totalDonor = await DonationMember.countDocuments();
+
+//     // 8️⃣ Total Active Donors
+//     const activeDonorsFromDonations = await Donations.distinct(
+//       "donationmember_id",
+//       {
+//         status: "paid",
+//       }
+//     );
+//     const activeDonorsFromPayments = await DonationPaymentStatus.distinct(
+//       "donationmember_id",
+//       {
+//         status: "paid",
+//       }
+//     );
+
+//     const activeDonorSet = new Set([
+//       ...activeDonorsFromDonations.filter(Boolean).map((id) => id.toString()),
+//       ...activeDonorsFromPayments.filter(Boolean).map((id) => id.toString()),
+//     ]);
+//     const totalActiveDonor = activeDonorSet.size;
+
+//     return res.status(200).json({
+//       summary: {
+//         latestBalance,
+//         totalDonation,
+//         totalExpense,
+//         lastEarning,
+//         lastExpense,
+//         totalDonor,
+//         totalActiveDonor,
+//       },
+//     });
+//   } catch (error) {
+//     console.error("Financial report error:", error);
+//     return res.status(500).json({ message: "Internal server error" });
+//   }
+// };
+
+// module.exports = { getFinancialReport };
+
 const Donations = require("../models/donationmodel");
 const DonationPaymentStatus = require("../models/donationPaymentStatusModel");
 const Expenses = require("../models/expensemodel");
-const DonationMember = require("../models/donationmembermodel"); // assuming you have this model
+const DonationMember = require("../models/donationmembermodel");
 
 const getFinancialReport = async (req, res) => {
   try {
-    // 🔹 Total Monthly Donations (Source of Truth: DonationPaymentStatus)
+    // 1️⃣ Total Monthly Donations - only from DonationPaymentStatus
     const totalMonthlyDonationSum = await DonationPaymentStatus.aggregate([
       { $match: { status: "paid" } },
       { $group: { _id: null, total: { $sum: "$amount" } } },
     ]);
     const totalMonthlyDonationAmount = totalMonthlyDonationSum[0]?.total || 0;
 
-    // 🔹 Total Non-Monthly Donations (Source of Truth: Donations model, but exclude 'monthly' type)
+    // 2️⃣ Get IDs already paid via DonationPaymentStatus (to avoid duplication)
+    const paidStatusDonationIds = await DonationPaymentStatus.distinct(
+      "donationmember_id",
+      {
+        status: "paid",
+      }
+    );
+
+    // 3️⃣ Total Non-Monthly Donations (excluding donationmember_ids already recorded in statuses)
     const totalNonMonthlyDonationSum = await Donations.aggregate([
-      { $match: { status: "paid", donation_type: { $ne: "monthly" } } }, // Exclude 'monthly' type
-      { $group: { _id: null, total: { $sum: "$amount" } } },
+      {
+        $match: {
+          status: "paid",
+          donation_type: { $ne: "monthly" },
+          donationmember_id: { $nin: paidStatusDonationIds },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: "$amount" },
+        },
+      },
     ]);
     const totalNonMonthlyDonationAmount =
       totalNonMonthlyDonationSum[0]?.total || 0;
@@ -23,7 +271,7 @@ const getFinancialReport = async (req, res) => {
     const totalDonation =
       totalMonthlyDonationAmount + totalNonMonthlyDonationAmount;
 
-    // 🔹 Total Expenses
+    // 4️⃣ Total Expenses
     const expenseSum = await Expenses.aggregate([
       { $group: { _id: null, total: { $sum: "$expense_amount" } } },
     ]);
@@ -31,9 +279,7 @@ const getFinancialReport = async (req, res) => {
 
     const latestBalance = totalDonation - totalExpense;
 
-    // 🔹 Most Recent Earning (Now considering both sources, but for display)
-    let lastEarning = null;
-
+    // 5️⃣ Most Recent Earning
     const recentDonation = await Donations.findOne({ status: "paid" })
       .sort({ createdAt: -1 })
       .select("amount createdAt donation_type name")
@@ -46,50 +292,50 @@ const getFinancialReport = async (req, res) => {
       .select("amount createdAt month")
       .lean();
 
+    let lastEarning = null;
     if (recentDonation && recentMonthlyPayment) {
       lastEarning =
         recentDonation.createdAt > recentMonthlyPayment.createdAt
           ? recentDonation
           : recentMonthlyPayment;
-    } else if (recentDonation) {
-      lastEarning = recentDonation;
-    } else if (recentMonthlyPayment) {
-      lastEarning = recentMonthlyPayment;
+    } else {
+      lastEarning = recentDonation || recentMonthlyPayment;
     }
 
-    // 🔹 Most Recent Expense (No change)
+    // 6️⃣ Most Recent Expense
     const lastExpense = await Expenses.findOne({})
       .sort({ expense_date: -1, createdAt: -1 })
       .select("expense_amount expense_details expense_date")
       .lean();
 
-    // 🔹 Total Donors (No change)
+    // 7️⃣ Total Donors
     const totalDonor = await DonationMember.countDocuments();
 
-    // 🔹 Total Active Donors (No change - still good to combine distinct from both)
+    // 8️⃣ Total Active Donors
     const activeDonorsFromDonations = await Donations.distinct(
       "donationmember_id",
-      { status: "paid" }
+      {
+        status: "paid",
+      }
     );
     const activeDonorsFromPayments = await DonationPaymentStatus.distinct(
       "donationmember_id",
-      { status: "paid" }
+      {
+        status: "paid",
+      }
     );
 
     const activeDonorSet = new Set([
-      ...activeDonorsFromDonations
-        .filter((id) => id)
-        .map((id) => id.toString()),
-      ...activeDonorsFromPayments.filter((id) => id).map((id) => id.toString()),
+      ...activeDonorsFromDonations.filter(Boolean).map((id) => id.toString()),
+      ...activeDonorsFromPayments.filter(Boolean).map((id) => id.toString()),
     ]);
-
     const totalActiveDonor = activeDonorSet.size;
 
     return res.status(200).json({
       summary: {
         latestBalance,
-        totalDonation, // Added totalDonation to the response for clarity
-        totalExpense, // Added totalExpense to the response for clarity
+        totalDonation,
+        totalExpense,
         lastEarning,
         lastExpense,
         totalDonor,
